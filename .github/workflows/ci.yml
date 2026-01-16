@@ -1,0 +1,81 @@
+name: CI Pipeline
+
+# Trigger workflow on push to main branch
+on:
+  push:
+    branches:
+      - main
+
+# Define jobs that will run in parallel or sequence
+jobs:
+  # Main CI job: test and build
+  ci:
+    # Run on GitHub-hosted Ubuntu runner (free tier)
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout the repository code
+      # This downloads the source code to the runner
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Python 3.11 environment
+      # This installs Python and sets up the environment for our Django app
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'  # Cache pip dependencies for faster builds
+      
+      # Step 3: Install Python dependencies
+      # Installs packages from requirements.txt needed for testing
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # Step 4: Run Django tests
+      # Executes the test suite to ensure code quality and functionality
+      - name: Run Django tests
+        run: |
+          python manage.py test --noinput
+      
+      # Step 5: Set up Docker Buildx
+      # Buildx enables advanced Docker build features and multi-platform builds
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      # Step 6: Get commit SHA for image tagging
+      # This creates a unique tag for each build based on the git commit
+      - name: Get commit SHA
+        id: commit
+        run: echo "sha=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      
+      # Step 7: Build Docker image
+      # Builds the production Docker image with the commit SHA as tag
+      # This image is the build artifact of our CI pipeline
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag django-app:${{ steps.commit.outputs.sha }} \
+            --tag django-app:latest \
+            .
+      
+      # Step 8: Save Docker image as artifact
+      # Saves the built image so it can be downloaded or used in other jobs
+      # In a real deployment, you would push this to a container registry
+      - name: Save Docker image as artifact
+        run: |
+          docker save django-app:${{ steps.commit.outputs.sha }} | gzip > django-app-image.tar.gz
+      
+      # Step 9: Upload Docker image artifact
+      # Makes the Docker image available for download from GitHub Actions UI
+      # Artifacts are retained for 90 days (free tier)
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ steps.commit.outputs.sha }}
+          path: django-app-image.tar.gz
+          retention-days: 30
+          # This is our build artifact - the Docker image ready for deployment
+
